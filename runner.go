@@ -42,6 +42,7 @@ type Runner struct {
 	scanner *Scanner
 	// tabling *tabling.Tabling
 	// result  *result.Result
+	paging *Paging
 	result *Result
 	err    error
 }
@@ -112,6 +113,38 @@ func (r *Runner) WithParams(params interface{}) Runnerer {
 	r.err = errors.New("params must be a map or a struct")
 	return r
 
+}
+
+type Paging struct {
+	Type   string
+	Limit  int
+	Offset int
+	Cursor string
+}
+
+func NewPagingCursor(cursor string, limit int, sortsBy ...string) *Paging {
+
+	return &Paging{
+		Type:   "cursor",
+		Limit:  limit,
+		Offset: 0,
+		Cursor: cursor,
+	}
+}
+
+func NewPagingOffset(offset, limit int) *Paging {
+	return &Paging{
+		Type:   "offset",
+		Limit:  limit,
+		Offset: offset,
+		Cursor: "",
+	}
+}
+
+func (r *Runner) WithPaging() Runnerer {
+
+	// kuysor.Kuysor
+	return r
 }
 
 // ScanMap initializes a runner with scanner map.
