@@ -1,7 +1,7 @@
 package mapper
 
 import (
-	"fayl/vars"
+	"github.com/redhajuanda/fayl/vars"
 
 	"github.com/mitchellh/mapstructure"
 	"github.com/pkg/errors"

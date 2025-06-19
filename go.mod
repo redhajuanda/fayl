@@ -1,4 +1,4 @@
-module fayl
+module github.com/redhajuanda/fayl
 
 go 1.24.2
 

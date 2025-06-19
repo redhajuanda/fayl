@@ -5,7 +5,7 @@ import (
 	"io"
 	"reflect"
 
-	"fayl/vars"
+	"github.com/redhajuanda/fayl/vars"
 
 	"github.com/georgysavva/scany/v2/dbscan"
 	"github.com/pkg/errors"

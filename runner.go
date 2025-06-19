@@ -3,9 +3,10 @@ package fayl
 import (
 	"context"
 	"encoding/json"
-	"fayl/mapper"
-	"fayl/parser"
 	"io"
+
+	"github.com/redhajuanda/fayl/mapper"
+	"github.com/redhajuanda/fayl/parser"
 
 	"github.com/pkg/errors"
 )
