@@ -2,11 +2,11 @@ package fayl
 
 import "io"
 
-type Scannerr interface {
-	ScanStruct(dest interface{}) error
-	ScanMap(dest map[string]interface{}) error
-	ScanStructs(dest interface{}) error
-	ScanMaps(dest *[]map[string]interface{}) error
+type Scannerer interface {
+	ScanStruct(dest any) error
+	ScanMap(dest map[string]any) error
+	ScanStructs(dest any) error
+	ScanMaps(dest *[]map[string]any) error
 	ScanWriter(dest io.Writer) error
 	Close() error
 }
@@ -14,7 +14,7 @@ type Scannerr interface {
 // Scanner is a struct that contains the scanner
 type Scanner struct {
 	scannerType int
-	dest        interface{}
+	dest        any
 }
 
 const (
@@ -27,7 +27,7 @@ const (
 )
 
 // newScanner returns a new scanner
-func newScanner(scannerType int, dest interface{}) *Scanner {
+func newScanner(scannerType int, dest any) *Scanner {
 
 	return &Scanner{
 		scannerType: scannerType,

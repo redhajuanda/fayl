@@ -3,6 +3,7 @@ package parser
 import (
 	"context"
 	"html/template"
+	"strings"
 
 	"github.com/VauntDev/tqla"
 	"github.com/jmoiron/sqlx"
@@ -20,6 +21,10 @@ func New() *parser {
 	return &parser{}
 }
 
+type Placeholder interface {
+	Format(sql string) (string, error)
+}
+
 // Parse parses the given query by replacing the parameters with placeholders.
 // the sanitization is performed using the tqla package.
 // tqla is a small light weight text parser that wraps the golang text/template standard library.
@@ -27,13 +32,13 @@ func New() *parser {
 // variables that are replaced with placeholders are added to an args slice that can be passed to standard db driver.
 // tqla prevents sql injection by leveraging DB placeholders as described in the following article:
 // https://go.dev/doc/database/sql-injection
-func (p *parser) Parse(ctx context.Context, queryTemplate string, data map[string]any) (string, []interface{}, error) {
+func (p *parser) Parse(ctx context.Context, queryTemplate string, data map[string]any, placeholder Placeholder) (string, []interface{}, error) {
 
 	// ctx, span := otel.Start(ctx)
 	// defer span.End()
 
 	// create a new parser with the default placeholder set to ?
-	parser, err := tqla.New(tqla.WithPlaceHolder(tqla.Question), tqla.WithFuncMap(template.FuncMap{
+	parser, err := tqla.New(tqla.WithPlaceHolder(placeholder), tqla.WithFuncMap(template.FuncMap{
 		"IsTimeZero":    IsTimeZero,
 		"IsTimeNotZero": IsTimeNotZero,
 		"sub":           func(x int) int { return x - 1 },
@@ -47,6 +52,8 @@ func (p *parser) Parse(ctx context.Context, queryTemplate string, data map[strin
 	if err != nil {
 		return "", nil, errors.Wrap(err, "failed to compile query")
 	}
+
+	query = strings.TrimSpace(query)
 
 	// interpolate query
 	return p.interpolateQuery(ctx, query, parameters...)

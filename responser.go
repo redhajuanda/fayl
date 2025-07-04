@@ -2,10 +2,12 @@ package fayl
 
 import (
 	"database/sql"
+	"fmt"
 	"io"
 	"reflect"
 
 	"github.com/redhajuanda/fayl/vars"
+	"github.com/redhajuanda/kuysor"
 
 	"github.com/georgysavva/scany/v2/dbscan"
 	"github.com/pkg/errors"
@@ -15,27 +17,30 @@ import (
 )
 
 type responser struct {
-	rows            *sqlx.Rows
-	res             sql.Result
+	rows *sqlx.Rows
+	// res             sql.Result
 	mapScanFunc     func(r rower, dest map[string]interface{}) error
 	jsonMarshalFunc func(v interface{}) ([]byte, error)
 	// tabling         *Tabling
-	// meta            *result.Metadata
+	pgres  *PaginationResponse
+	kuysor *kuysor.Result
 }
 
-// extractResponseExec extracts the response from the exec
-func (r *responser) extractResponseExec() error {
+// // extractResponseExec extracts the response from the exec
+// func (r *responser) extractResponseExec() error {
 
-	if r.rows == nil {
-		// r.meta.SQLResult = r.res
-	}
+// 	if r.rows == nil {
+// 		// r.meta.SQLResult = r.res
+// 	}
 
-	return nil
+// 	return nil
 
-}
+// }
 
 // ScanStruct scans the first row of the result set into the provided struct
-func (r *responser) ScanStruct(dest interface{}) error {
+func (r *responser) ScanStruct(dest any) error {
+
+	fmt.Println("Scanning struct...")
 
 	if dest == nil {
 		return errors.New("destination cannot be nil")
@@ -49,9 +54,9 @@ func (r *responser) ScanStruct(dest interface{}) error {
 		return errors.New("destination must be a pointer to a struct")
 	}
 
-	if r.rows == nil {
-		return r.extractResponseExec()
-	}
+	// if r.rows == nil {
+	// 	return r.extractResponseExec()
+	// }
 	defer r.rows.Close()
 
 	// Initialize the dbscan API with the provided struct tag key and column separator
@@ -72,6 +77,8 @@ func (r *responser) ScanStruct(dest interface{}) error {
 		return errors.Wrap(err, "failed to scan struct")
 	}
 
+	fmt.Println("Scanned struct:", dest)
+
 	return nil
 
 }
@@ -84,10 +91,10 @@ func (r *responser) ScanMap(dest map[string]interface{}) error {
 		return errors.New("destination cannot be nil")
 	}
 
-	// extract the response exec if rows is nil
-	if r.rows == nil {
-		return r.extractResponseExec()
-	}
+	// // extract the response exec if rows is nil
+	// if r.rows == nil {
+	// 	return r.extractResponseExec()
+	// }
 
 	defer r.rows.Close()
 
@@ -114,9 +121,9 @@ func (r *responser) ScanStructs(dest interface{}) error {
 		return errors.Errorf("destination must be a pointer to a slice of structs")
 	}
 
-	if r.rows == nil {
-		return r.extractResponseExec()
-	}
+	// if r.rows == nil {
+	// 	return r.extractResponseExec()
+	// }
 	defer r.rows.Close()
 
 	// initialize the dbscan API with the provided struct tag key and column separator
@@ -134,6 +141,18 @@ func (r *responser) ScanStructs(dest interface{}) error {
 		return errors.Wrap(err, "failed to scan structs")
 	}
 
+	next, prev, err := r.kuysor.SanitizeStruct(dest)
+	if err != nil {
+		return errors.Wrap(err, "failed to sanitize struct for kuysor")
+	}
+
+	// Set the pagination response
+	r.pgres = &PaginationResponse{
+		Type: "cursor",
+		Next: next,
+		Prev: prev,
+	}
+
 	// return r.handleDataPagingStruct(dest)
 	return nil
 
@@ -143,9 +162,9 @@ func (r *responser) ScanStructs(dest interface{}) error {
 // The destination must be a pointer to a slice of maps
 func (r *responser) ScanMaps(dest *[]map[string]interface{}) error {
 
-	if r.rows == nil {
-		return r.extractResponseExec()
-	}
+	// if r.rows == nil {
+	// 	return r.extractResponseExec()
+	// }
 	defer r.rows.Close()
 
 	// loop through the rows and scan each row into a map
@@ -166,7 +185,18 @@ func (r *responser) ScanMaps(dest *[]map[string]interface{}) error {
 	}
 
 	// handle data paging
-	// return r.handleDataPagingMap(dest)
+	next, prev, err := r.kuysor.SanitizeMap(dest)
+	if err != nil {
+		return err
+	}
+
+	// Set the pagination response
+	r.pgres = &PaginationResponse{
+		Type: "cursor",
+		Next: next,
+		Prev: prev,
+	}
+
 	return nil
 }
 
@@ -174,7 +204,7 @@ func (r *responser) ScanMaps(dest *[]map[string]interface{}) error {
 // The destination must be a writer
 func (r *responser) ScanWriter(dest io.Writer) error {
 
-	result := make([]map[string]interface{}, 0)
+	result := make([]map[string]any, 0)
 
 	// Scan the rows into a slice of maps
 	err := r.ScanMaps(&result)

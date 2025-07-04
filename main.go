@@ -7,18 +7,39 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/VauntDev/tqla"
 	"github.com/jmoiron/sqlx"
+	"github.com/redhajuanda/fayl/parser"
+	"github.com/redhajuanda/kuysor"
 )
 
 type Client struct {
-	db      *sqlx.DB
-	runners map[string]string
+	db          *sqlx.DB
+	ks          *kuysor.Kuysor
+	runners     map[string]string
+	placeholder parser.Placeholder
 }
+
+var (
+	// Question is a PlaceholderFormat instance that replaces placeholders with
+	// question-prefixed positional placeholders (e.g. ?, ?, ?).
+	Question = tqla.Question
+	// Dollar is a PlaceholderFormat instance that replaces placeholders with
+	// dollar-prefixed positional placeholders (e.g. $1, $2, $3).
+	Dollar = tqla.Dollar
+	// Colon is a PlaceholderFormat instance that replaces placeholders with
+	// colon-prefixed positional placeholders (e.g. :1, :2, :3).
+	Colon = tqla.Colon
+	// AtP is a PlaceholderFormat instance that replaces placeholders with
+	// "@p"-prefixed positional placeholders (e.g. @p1, @p2, @p3).
+	AtP = tqla.AtP
+)
 
 type Option struct {
 	DB            *sql.DB
 	QueryLocation string
 	DriverName    string
+	Placeholder   parser.Placeholder
 }
 
 // Init initializes a new fayl client.
@@ -86,11 +107,14 @@ func initFayl(opt Option) (*Client, error) {
 	}
 
 	return &Client{
-		db:      db,
-		runners: runners,
+		db:          db,
+		runners:     runners,
+		placeholder: opt.Placeholder,
 	}, nil
+
 }
 
+// Run initializes a new Runner with the given runner code.
 func (c *Client) Run(runner string) Runnerer {
 
 	return newRunner(runnerParams{

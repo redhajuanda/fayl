@@ -8,7 +8,7 @@ import (
 )
 
 // Decode decodes the input into the output
-func Decode(input interface{}, output interface{}) error {
+func Decode(input any, output any) error {
 
 	cfg := &mapstructure.DecoderConfig{
 		TagName: vars.TagKey,
