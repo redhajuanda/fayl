@@ -9,14 +9,14 @@ import (
 
 type rower interface {
 	ColumnTypes() ([]*sql.ColumnType, error)
-	Scan(dest ...interface{}) error
-	MapScan(dest map[string]interface{}) error
+	Scan(dest ...any) error
+	MapScan(dest map[string]any) error
 }
 
 // MapScan is like sqlx.Rows.Scan, but instead of a slice of pointers, it takes a map of pointers.
 // MapScan maps column names to dest[i] via the same mechanism that Scans uses, so if rows.Scan would
 // scan into dest, then rows.MapScan will map into the map.
-func MapScan(r rower, dest map[string]interface{}) error {
+func MapScan(r rower, dest map[string]any) error {
 
 	// Use MapScan to scan the row into the map
 	if err := r.MapScan(dest); err != nil {
@@ -32,8 +32,8 @@ func MapScan(r rower, dest map[string]interface{}) error {
 
 }
 
-// serializeMap converts []byte to map[string]interface{} or []map[string]interface{} or float64
-func serializeMap(mapValue map[string]interface{}) error {
+// serializeMap converts []byte to map[string]any or []map[string]any or float64
+func serializeMap(mapValue map[string]any) error {
 
 	for k, v := range mapValue {
 		switch v := v.(type) {
@@ -54,9 +54,9 @@ func serializeMap(mapValue map[string]interface{}) error {
 }
 
 // isMap checks whether the value is a map.
-func isMap(v []byte) (bool, map[string]interface{}) {
+func isMap(v []byte) (bool, map[string]any) {
 
-	var tempMap map[string]interface{}
+	var tempMap map[string]any
 	err := json.Unmarshal(v, &tempMap)
 	if err == nil {
 		return true, tempMap
@@ -66,9 +66,9 @@ func isMap(v []byte) (bool, map[string]interface{}) {
 }
 
 // isSliceOfMap checks whether the value is a slice of map.
-func isSliceOfMap(v []byte) (bool, []map[string]interface{}) {
+func isSliceOfMap(v []byte) (bool, []map[string]any) {
 
-	var tempSliceOfMap []map[string]interface{}
+	var tempSliceOfMap []map[string]any
 	err := json.Unmarshal(v, &tempSliceOfMap)
 	if err == nil {
 		return true, tempSliceOfMap

@@ -8,12 +8,13 @@ require (
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/pkg/errors v0.9.1
-	github.com/redhajuanda/kuysor v0.0.0-20250704075735-fa1eba82e129
+	github.com/redhajuanda/kuysor v0.0.0-20250707071244-2a4581ee0a6b
+	github.com/sirupsen/logrus v1.9.3
 	github.com/stretchr/testify v1.10.0
 	go.uber.org/mock v0.5.2
 )
 
-// replace github.com/redhajuanda/kuysor v1.0.0 => ../kuysor
+// replace github.com/redhajuanda/kuysor => ../kuysor
 
 require (
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect

@@ -3,36 +3,14 @@ package fayl
 import (
 	"database/sql"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/VauntDev/tqla"
 	"github.com/jmoiron/sqlx"
 	"github.com/redhajuanda/fayl/parser"
-	"github.com/redhajuanda/kuysor"
-)
-
-type Client struct {
-	db          *sqlx.DB
-	ks          *kuysor.Kuysor
-	runners     map[string]string
-	placeholder parser.Placeholder
-}
-
-var (
-	// Question is a PlaceholderFormat instance that replaces placeholders with
-	// question-prefixed positional placeholders (e.g. ?, ?, ?).
-	Question = tqla.Question
-	// Dollar is a PlaceholderFormat instance that replaces placeholders with
-	// dollar-prefixed positional placeholders (e.g. $1, $2, $3).
-	Dollar = tqla.Dollar
-	// Colon is a PlaceholderFormat instance that replaces placeholders with
-	// colon-prefixed positional placeholders (e.g. :1, :2, :3).
-	Colon = tqla.Colon
-	// AtP is a PlaceholderFormat instance that replaces placeholders with
-	// "@p"-prefixed positional placeholders (e.g. @p1, @p2, @p3).
-	AtP = tqla.AtP
+	"github.com/sirupsen/logrus"
 )
 
 type Option struct {
@@ -40,6 +18,9 @@ type Option struct {
 	QueryLocation string
 	DriverName    string
 	Placeholder   parser.Placeholder
+	LogLevel      uint32 // 0 = Panic, 1 = Fatal, 2 = Error, 3 = Warn, 4 = Info, 5 = Debug, 6 = Trace
+	LogFormatter  string // "json" or "text"
+	LogOutput     io.Writer
 }
 
 // Init initializes a new fayl client.
@@ -51,6 +32,30 @@ func Init(opt Option) (*Client, error) {
 
 // initFayl initializes a new fayl client with the given options.
 func initFayl(opt Option) (*Client, error) {
+
+	// init logger
+	log := newLogger("fayl")
+	// Set log level
+	log.Logger.SetLevel(logrus.Level(opt.LogLevel))
+	// Set log formatter
+	if opt.LogFormatter == "" {
+		opt.LogFormatter = "json" // default to json formatter
+	}
+	switch opt.LogFormatter {
+	case "json":
+		log.Logger.SetFormatter(&logrus.JSONFormatter{})
+	case "text":
+		log.Logger.SetFormatter(&logrus.TextFormatter{
+			DisableColors: true,
+			FullTimestamp: true,
+		})
+	}
+	// Set log output
+	if opt.LogOutput != nil {
+		log.Logger.SetOutput(opt.LogOutput)
+	} else {
+		log.Logger.SetOutput(os.Stdout)
+	}
 
 	db := sqlx.NewDb(opt.DB, opt.DriverName)
 	if err := db.Ping(); err != nil {
@@ -107,20 +112,10 @@ func initFayl(opt Option) (*Client, error) {
 	}
 
 	return &Client{
-		db:          db,
+		db:          &DB{DB: db},
 		runners:     runners,
 		placeholder: opt.Placeholder,
+		log:         log,
 	}, nil
 
-}
-
-// Run initializes a new Runner with the given runner code.
-func (c *Client) Run(runner string) Runnerer {
-
-	return newRunner(runnerParams{
-		runnerCode: runner,
-		client:     c,
-		// log:           c.log,
-		inTransaction: false,
-	})
 }

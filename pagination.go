@@ -1,8 +1,24 @@
 package fayl
 
 import (
+	"github.com/VauntDev/tqla"
 	"github.com/redhajuanda/fayl/parser"
 	"github.com/redhajuanda/kuysor"
+)
+
+var (
+	// Question is a PlaceholderFormat instance that replaces placeholders with
+	// question-prefixed positional placeholders (e.g. ?, ?, ?).
+	Question = tqla.Question
+	// Dollar is a PlaceholderFormat instance that replaces placeholders with
+	// dollar-prefixed positional placeholders (e.g. $1, $2, $3).
+	Dollar = tqla.Dollar
+	// Colon is a PlaceholderFormat instance that replaces placeholders with
+	// colon-prefixed positional placeholders (e.g. :1, :2, :3).
+	Colon = tqla.Colon
+	// AtP is a PlaceholderFormat instance that replaces placeholders with
+	// "@p"-prefixed positional placeholders (e.g. @p1, @p2, @p3).
+	AtP = tqla.AtP
 )
 
 type Tabling struct {

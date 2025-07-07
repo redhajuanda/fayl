@@ -2,12 +2,14 @@ package fayl
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
-	"fmt"
 	"io"
 
+	"github.com/jmoiron/sqlx"
 	"github.com/redhajuanda/fayl/mapper"
 	"github.com/redhajuanda/fayl/parser"
+	"github.com/redhajuanda/fayl/vars"
 	"github.com/redhajuanda/kuysor"
 
 	"github.com/pkg/errors"
@@ -66,10 +68,10 @@ type Runnerer interface {
 
 // // Runner is a struct that contains runner configs to be executed.
 type Runner struct {
-	runnerCode string
-	params     map[string]interface{}
-	client     *Client
-	// log           log.Logger
+	runnerCode    string
+	params        map[string]any
+	client        *Client
+	log           Logger
 	inTransaction bool
 	// requestID     string
 	// // cacher        *Cacher
@@ -83,9 +85,9 @@ type Runner struct {
 }
 
 type runnerParams struct {
-	runnerCode string
-	client     *Client
-	// log           log.Logger
+	runnerCode    string
+	client        *Client
+	log           Logger
 	inTransaction bool
 }
 
@@ -93,10 +95,10 @@ type runnerParams struct {
 func newRunner(runnerParams runnerParams) *Runner {
 
 	return &Runner{
-		runnerCode: runnerParams.runnerCode,
-		client:     runnerParams.client,
-		params:     make(map[string]interface{}),
-		// log:           runnerParams.log,
+		runnerCode:    runnerParams.runnerCode,
+		client:        runnerParams.client,
+		params:        make(map[string]any),
+		log:           runnerParams.log,
 		inTransaction: runnerParams.inTransaction,
 		// cacher:        &Cacher{},
 		// result: &result.Result{
@@ -110,7 +112,7 @@ func newRunner(runnerParams runnerParams) *Runner {
 // Param is a key-value pair.
 // The key is the parameter name, and the value is the parameter value.
 // If the parameter already exists, it will be overwritten.
-func (r *Runner) WithParam(key string, value interface{}) Runnerer {
+func (r *Runner) WithParam(key string, value any) Runnerer {
 
 	r.params[key] = value
 	return r
@@ -237,8 +239,15 @@ func (r *Runner) ScanWriter(dest io.Writer) Runnerer {
 func (r *Runner) Exec(ctx context.Context) (*ResultExec, error) {
 
 	var (
-		ps = parser.New()
+		ps     = parser.New()
+		result sql.Result
 	)
+
+	r.log.WithContext(ctx).WithParams(map[string]any{
+		"runner_code": r.runnerCode,
+		"params":      r.params,
+		"placeholder": r.client.placeholder,
+	}).Debug("Parsing query")
 
 	// parse query
 	query, parameters, err := ps.Parse(ctx, r.client.runners[r.runnerCode], r.params, r.client.placeholder)
@@ -246,13 +255,39 @@ func (r *Runner) Exec(ctx context.Context) (*ResultExec, error) {
 		return nil, err
 	}
 
-	fmt.Println("query:", query)
-	fmt.Println("parameters:", parameters)
+	if r.inTransaction {
 
-	// execute query
-	result, err := r.client.db.ExecContext(ctx, query, parameters...)
-	if err != nil {
-		return nil, err
+		r.log.WithContext(ctx).WithParams(map[string]any{
+			"runner_code": r.runnerCode,
+			"query":       query,
+			"params":      parameters,
+		}).Info("Executing query in transaction")
+
+		// if in transaction, use the transaction context
+		tx, err := r.client.db.getTx(ctx)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to get transaction")
+		}
+
+		// execute query
+		result, err = tx.ExecContext(ctx, query, parameters...)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to execute query in transaction")
+		}
+
+	} else {
+
+		r.log.WithContext(ctx).WithParams(map[string]any{
+			"runner_code": r.runnerCode,
+			"query":       query,
+			"params":      parameters,
+		}).Info("Executing query")
+
+		// execute query
+		result, err = r.client.db.ExecContext(ctx, query, parameters...)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return &ResultExec{
@@ -265,8 +300,15 @@ func (r *Runner) Exec(ctx context.Context) (*ResultExec, error) {
 func (r *Runner) Query(ctx context.Context) (*ResultQuery, error) {
 
 	var (
-		ps = parser.New()
+		ps   = parser.New()
+		rows *sqlx.Rows
 	)
+
+	r.log.WithContext(ctx).WithParams(map[string]any{
+		"runner_code": r.runnerCode,
+		"params":      r.params,
+		"placeholder": r.client.placeholder,
+	}).Debug("Parsing query")
 
 	// parse query
 	query, parameters, err := ps.Parse(ctx, r.client.runners[r.runnerCode], r.params, r.client.placeholder)
@@ -274,45 +316,60 @@ func (r *Runner) Query(ctx context.Context) (*ResultQuery, error) {
 		return nil, err
 	}
 
-	fmt.Println("query:", query)
-	fmt.Println("parameters:", parameters)
-
 	// build pagination cursor if pagination is set
 	rs, err := r.buildTabling(ctx, query, parameters...)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to build pagination cursor")
 	}
-
-	query = rs.Query
-	parameters = rs.Args
-
-	// if r.pagination != nil && r.pagination.Type == "offset" {
-	// 	return nil, errors.New("offset pagination is not supported yet")
-	// }
-
-	// execute query
-	rows, err := r.client.db.QueryxContext(ctx, query, parameters...)
-	if err != nil {
-		return nil, err
+	if rs != nil {
+		query = rs.Query
+		parameters = rs.Args
 	}
-	defer rows.Close()
+
+	if r.inTransaction {
+
+		r.log.WithContext(ctx).WithParams(map[string]any{
+			"runner_code": r.runnerCode,
+			"query":       query,
+			"params":      parameters,
+		}).Info("Querying query in transaction")
+
+		// if in transaction, use the transaction context
+		tx, err := r.client.db.getTx(ctx)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to get transaction")
+		}
+
+		// execute query
+		rows, err = tx.QueryxContext(ctx, query, parameters...)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to execute query in transaction")
+		}
+
+	} else {
+
+		r.log.WithContext(ctx).WithParams(map[string]any{
+			"runner_code": r.runnerCode,
+			"query":       query,
+			"params":      parameters,
+		}).Info("Querying query")
+
+		// execute query
+		rows, err = r.client.db.QueryxContext(ctx, query, parameters...)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	responser := &responser{
-		rows: rows,
-		// res:         res,
+		rows:        rows,
 		mapScanFunc: MapScan,
 		jsonMarshalFunc: func(v interface{}) ([]byte, error) {
 			return json.Marshal(v)
 		},
-		kuysor: rs,
-		// tabling: tabling,
-		// meta:    metadata,
-	} // create and return response
-
-	// if rows != nil {
-	// columns, _ := rows.Columns()
-	// metadata.Columns = columns
-	// }
+		kuysor:  rs,
+		tabling: r.tabling,
+	}
 
 	// scan result
 	err = r.scan(ctx, responser)
@@ -325,56 +382,24 @@ func (r *Runner) Query(ctx context.Context) (*ResultQuery, error) {
 	}, nil
 }
 
-// func (r *Runner) buildPaginationCursor(ctx context.Context, query string, parameters ...any) (*kuysor.Result, error) {
-
-// 	// if r.pagination != nil && r.pagination.Type == "cursor" {
-
-// 	// 	ks := kuysor.NewQuery(query).WithOrderBy(r.pagination.SortsBy...).WithArgs(parameters...)
-
-// 	// 	res, err := ks.Build()
-// 	// 	if err != nil {
-// 	// 		return nil, errors.Wrap(err, "failed to build kuysor query")
-// 	// 	}
-
-// 	// 	r.kuysor = ks
-
-// 	// 	return res, nil
-
-// 	if r.tabling != nil {
-// 		// if pagination is set, build kuysor query
-// 		if r.tabling.Pagination != nil && r.tabling.Pagination.Type == "cursor" {
-
-// 			ks := kuysor.NewQuery(query).
-// 				WithOrderBy(r.tabling.OrderBy...).
-// 				WithArgs(parameters...).
-// 				// WithPagination(r.tabling.Pagination)
-
-// 			res, err := ks.Build()
-// 			if err != nil {
-// 				return nil, errors.Wrap(err, "failed to build kuysor query")
-// 			}
-
-// 			r.kuysor = ks
-
-// 			return res, nil
-// 		}
-// 	}
-
-// 	return nil, nil
-// }
-
 func (r *Runner) buildTabling(ctx context.Context, query string, parameters ...any) (*kuysor.Result, error) {
+
+	kys := kuysor.NewInstance(kuysor.Options{
+		StructTag:       vars.TagKey,
+		PlaceHolderType: placeholderMapping[r.client.placeholder],
+		NullSortMethod:  kuysor.BoolSort,
+		DefaultLimit:    10,
+	})
 
 	if r.tabling != nil {
 		// if pagination is set, build kuysor query
 		if r.tabling.Pagination != nil && r.tabling.Pagination.Type == "cursor" {
 
-			ks := kuysor.NewQuery(query, kuysor.Cursor).
+			ks := kys.NewQuery(query, kuysor.Cursor).
 				WithOrderBy(r.tabling.OrderBy...).
 				WithArgs(parameters...).
 				WithCursor(r.tabling.Pagination.Cursor).
-				WithLimit(r.tabling.Pagination.Limit).
-				WithPlaceHolderType(placeholderMapping[r.client.placeholder])
+				WithLimit(r.tabling.Pagination.Limit)
 
 			res, err := ks.Build()
 			if err != nil {
@@ -385,12 +410,11 @@ func (r *Runner) buildTabling(ctx context.Context, query string, parameters ...a
 
 			return res, nil
 		} else if r.tabling.Pagination != nil && r.tabling.Pagination.Type == "offset" {
-			ks := kuysor.NewQuery(query, kuysor.Offset).
+			ks := kys.NewQuery(query, kuysor.Offset).
 				WithOrderBy(r.tabling.OrderBy...).
 				WithArgs(parameters...).
 				WithOffset(r.tabling.Pagination.Offset).
-				WithLimit(r.tabling.Pagination.Limit).
-				WithPlaceHolderType(placeholderMapping[r.client.placeholder])
+				WithLimit(r.tabling.Pagination.Limit)
 
 			res, err := ks.Build()
 			if err != nil {
@@ -404,7 +428,6 @@ func (r *Runner) buildTabling(ctx context.Context, query string, parameters ...a
 			ks := kuysor.NewQuery(query, "").
 				WithOrderBy(r.tabling.OrderBy...).
 				WithArgs(parameters...)
-				// WithPlaceHolderType(placeholderMapping[r.client.placeholder])
 
 			res, err := ks.Build()
 			if err != nil {
@@ -423,16 +446,6 @@ func (r *Runner) buildTabling(ctx context.Context, query string, parameters ...a
 
 // scan scans the result to the destination.
 func (r *Runner) scan(ctx context.Context, sc Scannerer) error {
-	// const (
-	// 	latencyType = "scan_result"
-	// )
-
-	// ctx, span := otel.Start(ctx)
-	// defer span.End()
-
-	// // count latency for scan result
-	// latency.Start(ctx, latencyType)
-	// defer latency.Stop(ctx, latencyType)
 
 	if r.scanner == nil {
 		r.scanner = newScanner(noScanner, nil)
@@ -445,14 +458,14 @@ func (r *Runner) scan(ctx context.Context, sc Scannerer) error {
 	switch r.scanner.scannerType {
 	case scannerMap:
 
-		err := sc.ScanMap(r.scanner.dest.(map[string]interface{}))
+		err := sc.ScanMap(r.scanner.dest.(map[string]any))
 		if err != nil {
 			return err
 		}
 
 	case scannerMaps:
 
-		err := sc.ScanMaps(r.scanner.dest.(*[]map[string]interface{}))
+		err := sc.ScanMaps(r.scanner.dest.(*[]map[string]any))
 		if err != nil {
 			return err
 		}
